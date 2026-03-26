@@ -741,6 +741,38 @@ Useful for chat applications, search boxes, or any input where you want to submi
 
 ... Be careful!
 
+### Streaming mode (live dictation)
+
+Enable streaming mode to see text appear as you speak, similar to phone dictation. Instead of waiting for you to stop recording, hyprwhspr transcribes audio every few seconds and outputs text incrementally.
+
+```json
+{
+  "streaming_mode": true,
+  "streaming_chunk_seconds": 2.0,
+  "streaming_lookback_seconds": 30.0,
+  "streaming_ime_mode": true,
+  "streaming_wtype_delay_ms": 0
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `streaming_mode` | `false` | Enable live streaming transcription |
+| `streaming_chunk_seconds` | `2.0` | How often to re-transcribe during streaming (seconds) |
+| `streaming_lookback_seconds` | `30.0` | Max audio window sent to whisper (whisper's limit is 30s) |
+| `streaming_ime_mode` | `true` | Use Wayland input-method-v2 when available (falls back to wtype) |
+| `streaming_wtype_delay_ms` | `0` | Inter-keystroke delay for wtype direct typing (0 = fastest) |
+
+Streaming mode only works with local transcription backends (`pywhispercpp`, `nvidia`, `cpu`, `vulkan`, `faster-whisper`).
+
+**Two output backends:**
+
+- **IME (input-method-v2):** Used when the focused application supports Wayland `text-input-v3` (Ghostty, GTK4 apps, Qt6 apps, Firefox). In-progress text appears underlined (preedit) and can be freely revised by the transcription engine. Complete sentences are committed permanently. This is the preferred path — it provides phone-like dictation with proper cursor awareness.
+
+- **wtype (virtual keyboard):** Fallback for applications that don't support `text-input-v3` (Electron, Chrome, some terminals). Text is typed directly via simulated keystrokes. When whisper revises earlier text, backspaces erase the stale portion and the correction is retyped. If you edit text during dictation (detected via physical keyboard monitoring), corrections are frozen to prevent interference.
+
+The backend is selected automatically: hyprwhspr tries IME first and falls back to wtype within 500ms if the focused application doesn't activate the IME protocol.
+
 ### Clipboard behavior
 
 hyprwhspr saves your clipboard before injection and restores it automatically afterward — your clipboard contents are never permanently overwritten by dictated text.

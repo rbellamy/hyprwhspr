@@ -63,6 +63,12 @@ class ConfigManager:
             # "wtype"         = wtype -- <text>  (native Wayland, works in Kitty-protocol terminals)
             # "ydotool_type"  = ydotool type -- <text>  (works in Kitty-protocol terminals)
             'inject_mode': None,
+            # Streaming transcription (text appears as you speak)
+            'streaming_mode': False,              # Enable live streaming transcription
+            'streaming_chunk_seconds': 2.0,       # Re-transcription interval during streaming
+            'streaming_lookback_seconds': 30.0,   # Max audio window sent to whisper (whisper max is 30s)
+            'streaming_wtype_delay_ms': 0,        # Inter-keystroke delay for wtype (0 = fastest)
+            'streaming_ime_mode': True,           # Use input-method-v2 when available (vs wtype fallback)
             # Transcription backend settings
             'transcription_backend': 'pywhispercpp',  # "pywhispercpp" (or "cpu"/"nvidia"/"vulkan"/"amd") or "rest-api"
             'rest_endpoint_url': None,         # Full HTTP or HTTPS URL for remote transcription

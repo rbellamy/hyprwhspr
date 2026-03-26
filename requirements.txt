@@ -12,6 +12,9 @@ pywhispercpp==1.4.1
 requests>=2.25.0
 websocket-client>=1.9.0
 
+# Wayland IME (input-method-v2)
+pywayland>=0.4.18
+
 # System integration
 psutil>=5.8.0
 pyudev>=0.24.0

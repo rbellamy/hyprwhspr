@@ -403,6 +403,69 @@ class TextInjector:
         except Exception as e:
             print(f"  auto_submit Enter key failed: {e}")
 
+    # ------------------------ Direct typing (streaming) ------------------------
+
+    def type_text_direct(self, text: str, delay_ms: int = 0) -> bool:
+        """Type text directly via wtype, bypassing clipboard. For streaming use.
+
+        Args:
+            text: Text to type into the focused application
+            delay_ms: Inter-keystroke delay in milliseconds (0 = fastest)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not text:
+            return True
+
+        if not self.wtype_available:
+            print("[STREAMING] wtype not available for direct typing")
+            return False
+
+        try:
+            cmd = ["wtype"]
+            if delay_ms > 0:
+                cmd += ["-d", str(delay_ms)]
+            cmd += ["--", text]
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            if result.returncode != 0:
+                stderr = (result.stderr or b"").decode("utf-8", "ignore")
+                print(f"[STREAMING] wtype failed: {stderr}")
+                return False
+            return True
+        except Exception as e:
+            print(f"[STREAMING] wtype error: {e}")
+            return False
+
+    def send_backspaces(self, count: int) -> bool:
+        """Send N backspace keystrokes via wtype to erase typed text.
+
+        Args:
+            count: Number of backspaces to send
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if count <= 0:
+            return True
+        if not self.wtype_available:
+            print("[STREAMING] wtype not available for backspaces")
+            return False
+        try:
+            # Build args: -k BackSpace repeated
+            cmd = ["wtype"]
+            for _ in range(count):
+                cmd += ["-k", "BackSpace"]
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            if result.returncode != 0:
+                stderr = (result.stderr or b"").decode("utf-8", "ignore")
+                print(f"[STREAMING] wtype backspace failed: {stderr}")
+                return False
+            return True
+        except Exception as e:
+            print(f"[STREAMING] wtype backspace error: {e}")
+            return False
+
     # ------------------------ Public API ------------------------
 
     def inject_text(self, text: str) -> bool:

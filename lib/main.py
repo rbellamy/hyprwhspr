@@ -63,6 +63,9 @@ from paths import (
 )
 from backend_utils import normalize_backend
 from segment_manager import SegmentManager
+from streaming_coordinator import StreamingCoordinator
+from ime_streaming_coordinator import IMEStreamingCoordinator
+from ime_client import IMEClient
 
 class hyprwhsprApp:
     """Main application class for hyprwhspr voice dictation (Headless Mode)"""
@@ -102,6 +105,10 @@ class hyprwhsprApp:
         self._mic_disconnected = False  # Track if microphone was disconnected via hotplug event
         self._last_hotplug_add_time = float('-inf')  # Track last USB add event (for debouncing multiple events)
         
+        # Streaming transcription coordinator (None when not streaming)
+        self._streaming_coordinator = None
+        self._ime_client: IMEClient | None = None
+
         # Lock to prevent concurrent recording starts (race condition protection)
         self._recording_lock = threading.Lock()
 
@@ -1138,6 +1145,47 @@ class hyprwhsprApp:
                 
                 # Stream is working and stable - start monitoring
                 self._start_audio_level_monitoring()
+
+                # Start streaming transcription if enabled (local backends only)
+                if self.config.get_setting("streaming_mode", False):
+                    _backend = normalize_backend(self.config.get_setting("transcription_backend", "pywhispercpp"))
+                    if _backend in ("pywhispercpp", "cpu", "nvidia", "amd", "vulkan", "faster-whisper"):
+                        use_ime = self.config.get_setting("streaming_ime_mode", True)
+                        if use_ime:
+                            try:
+                                ime = IMEClient()
+                                if ime.start():
+                                    # Wait up to 500ms for the focused app to activate the IME
+                                    import time as _time
+                                    _deadline = _time.monotonic() + 0.5
+                                    while _time.monotonic() < _deadline and not ime.is_active():
+                                        _time.sleep(0.05)
+
+                                    if ime.is_active():
+                                        self._ime_client = ime
+                                        self._streaming_coordinator = IMEStreamingCoordinator(
+                                            self.whisper_manager, ime, self.text_injector,
+                                            self.audio_capture, self.config,
+                                        )
+                                        self._streaming_coordinator.start(language_override=language_override)
+                                        print("[STREAMING] Using input-method-v2 (IME mode)", flush=True)
+                                    else:
+                                        print("[STREAMING] IME not activated by app (no text-input-v3), falling back to wtype", flush=True)
+                                        ime.stop()
+                                        use_ime = False
+                                else:
+                                    ime.stop()
+                                    use_ime = False
+                            except Exception as e:
+                                print(f"[STREAMING] IME init failed, falling back to wtype: {e}", flush=True)
+                                use_ime = False
+
+                        if not use_ime:
+                            self._streaming_coordinator = StreamingCoordinator(
+                                self.whisper_manager, self.text_injector,
+                                self.audio_capture, self.config,
+                            )
+                            self._streaming_coordinator.start(language_override=language_override)
                     
             except (RuntimeError, Exception) as e:
                 print(f"[ERROR] Failed to start recording: {e}", flush=True)
@@ -1285,6 +1333,13 @@ class hyprwhsprApp:
 
             # Check for zero-volume or broken stream
             if audio_data is None:
+                # Error path: stop streaming coordinator if active
+                if self._streaming_coordinator is not None:
+                    self._streaming_coordinator.stop()
+                    self._streaming_coordinator = None
+                    if self._ime_client is not None:
+                        self._ime_client.stop()
+                        self._ime_client = None
                 # Stream was broken - check if we got any callbacks
                 self.audio_manager.play_error_sound()
                 with self.audio_capture.lock:
@@ -1298,6 +1353,13 @@ class hyprwhsprApp:
                 # Show error state and hide OSD
                 self._show_result_and_hide(False)
             elif self._is_zero_volume(audio_data):
+                # Error path: stop streaming coordinator if active
+                if self._streaming_coordinator is not None:
+                    self._streaming_coordinator.stop()
+                    self._streaming_coordinator = None
+                    if self._ime_client is not None:
+                        self._ime_client.stop()
+                        self._ime_client = None
                 # Audio data exists but is all zeros - mic not producing sound
                 # Play error sound and notify user (may be intentional muting, but still inform)
                 self.audio_manager.play_error_sound()
@@ -1307,8 +1369,22 @@ class hyprwhsprApp:
             else:
                 # Valid audio data - process it
                 self.audio_manager.play_stop_sound()
-                self._process_audio(audio_data)
-                
+
+                if self._streaming_coordinator is not None:
+                    # Streaming was active — text was already typed live.
+                    committed = self._streaming_coordinator.stop()
+                    self._streaming_coordinator = None
+                    if self._ime_client is not None:
+                        self._ime_client.stop()
+                        self._ime_client = None
+                    self.current_transcription = committed
+                    success = bool(committed and committed.strip())
+                    self._show_result_and_hide(success)
+                    if success:
+                        self.text_injector._send_enter_if_auto_submit()
+                else:
+                    self._process_audio(audio_data)
+
             # Clear language override after transcription completes
             self._current_language_override = None
                 
@@ -1318,6 +1394,12 @@ class hyprwhsprApp:
             try:
                 self.is_recording = False
                 self._current_language_override = None  # Clear language override on cancel
+                if self._streaming_coordinator is not None:
+                    self._streaming_coordinator.stop()
+                    self._streaming_coordinator = None
+                if self._ime_client is not None:
+                    self._ime_client.stop()
+                    self._ime_client = None
                 self._show_result_and_hide(False)
                 self._stop_audio_level_monitoring()
                 self._write_recording_status(False)
