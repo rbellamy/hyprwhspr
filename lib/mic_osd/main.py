@@ -45,7 +45,7 @@ class MicOSD:
     Mic-osd application with show/hide support.
     """
     
-    def __init__(self, visualization="waveform", width=400, height=68, daemon=False):
+    def __init__(self, visualization="waveform", width=200, height=40, daemon=False):
         self.main_loop = None
         self.app = None
         self.audio_monitor = None
@@ -424,14 +424,14 @@ def main():
     parser.add_argument(
         "-w", "--width",
         type=int,
-        default=400,
-        help="Window width (default: 400)"
+        default=200,
+        help="Window width (default: 200)"
     )
     parser.add_argument(
         "-H", "--height",
         type=int,
-        default=68,
-        help="Window height (default: 68)"
+        default=40,
+        help="Window height (default: 40)"
     )
     parser.add_argument(
         "-d", "--daemon",
